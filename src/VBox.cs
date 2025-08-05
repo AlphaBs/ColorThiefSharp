@@ -2,7 +2,7 @@ namespace ColorThiefSharp;
 
 // https://github.com/lokesh/quantize/blob/master/src/quantize.js
 
-public record VBox(PixelRGB Min, PixelRGB Max, int Volume, int Count, PixelRGB Avg)
+internal record VBox(PixelRGB Min, PixelRGB Max, int Volume, int Count, PixelRGB Avg)
 {
     public static VBox FromHisto(PixelRGB min, PixelRGB max, int[] histo) => 
         new VBox(min, max, 
@@ -79,13 +79,13 @@ public record VBox(PixelRGB Min, PixelRGB Max, int Volume, int Count, PixelRGB A
     }
 }
 
-public class VBoxComparer : IComparer<VBox>
+internal class VBoxComparer : IComparer<VBox>
 {
     // 내림차순 정렬
     public int Compare(VBox x, VBox y) => y.Count.CompareTo(x.Count);
 }
 
-public class VBoxVolumeComparer : IComparer<VBox>
+internal class VBoxVolumeComparer : IComparer<VBox>
 {
     // 내림차순 정렬
     public int Compare(VBox x, VBox y)

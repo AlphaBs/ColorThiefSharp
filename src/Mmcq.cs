@@ -4,7 +4,14 @@ namespace ColorThiefSharp;
 
 public class Mmcq
 {
+    public static IColorPalette Quantize(IEnumerable<PixelRGB> pixels, int maxColors)
+    {
+        var mmcq = new Mmcq();
+        return mmcq.InternalQuantize(pixels, maxColors);
+    }
+
     internal const int Sigbits = 5;
+    internal const int HistoSize = 1 << (3 * Sigbits);
     internal const int Rshift = 8 - Sigbits;
     private const int MaxIterations = 1000;
     private const double FractByPopulation = 0.75;
@@ -12,13 +19,8 @@ public class Mmcq
     internal static int GetColorIndex(int r, int g, int b) =>
         (r << (2 * Sigbits)) | (g << Sigbits) | b;
 
-    private int[] _histo;
-
-    public static IColorPalette Quantize(IEnumerable<PixelRGB> pixels, int maxColors)
-    {
-        var instance = new Mmcq();
-        return instance.InternalQuantize(pixels, maxColors);
-    }
+    private readonly HashSet<PixelRGB> _uniqueColors = new();
+    private readonly int[] _histo = new int[HistoSize];
 
     private IColorPalette InternalQuantize(IEnumerable<PixelRGB> pixels, int maxColors)
     {
@@ -27,12 +29,33 @@ public class Mmcq
         if (pixels == null || !pixels.Any())
             throw new ArgumentNullException(nameof(pixels));
 
-        var uniqueColors = GetUniqueColorSet(pixels);
-        if (uniqueColors.Count <= maxColors)
-            return new SimpleColorMap(uniqueColors);
+        byte rmin = 255, rmax = 0;
+        byte gmin = 255, gmax = 0;
+        byte bmin = 255, bmax = 0;
 
-        _histo = GetHisto(pixels);
-        var vbox = VBoxFromPixels(pixels);
+        foreach (var pixel in pixels)
+        {
+            byte rval = (byte)(pixel.R >> Rshift);
+            byte gval = (byte)(pixel.G >> Rshift);
+            byte bval = (byte)(pixel.B >> Rshift);
+
+            int colorIndex = GetColorIndex(rval, gval, bval);
+            _histo[colorIndex]++;
+
+            rmin = Math.Min(rmin, rval);
+            rmax = Math.Max(rmax, rval);
+            gmin = Math.Min(gmin, gval);
+            gmax = Math.Max(gmax, gval);
+            bmin = Math.Min(bmin, bval);
+            bmax = Math.Max(bmax, bval);
+
+            _uniqueColors.Add(pixel);
+        }
+
+        if (_uniqueColors.Count <= maxColors)
+            return new SimpleColorMap(_uniqueColors);
+
+        var vbox = VBox.FromHisto(new PixelRGB(rmin, gmin, bmin), new PixelRGB(rmax, gmax, bmax), _histo);
 
         var pq = new PQueue<VBox>(new VBoxComparer());
         pq.Push(vbox);
@@ -54,44 +77,6 @@ public class Mmcq
         }
 
         return new CMap(finalVBoxes);
-    }
-
-    private static IReadOnlyCollection<PixelRGB> GetUniqueColorSet(IEnumerable<PixelRGB> pixels)
-    {
-        return new HashSet<PixelRGB>(pixels);
-    }
-
-    private static int[] GetHisto(IEnumerable<PixelRGB> pixels)
-    {
-        int histoSize = 1 << (3 * Sigbits);
-        var histo = new int[histoSize];
-        foreach (var pixel in pixels)
-        {
-            int rval = pixel.R >> Rshift;
-            int gval = pixel.G >> Rshift;
-            int bval = pixel.B >> Rshift;
-            histo[GetColorIndex(rval, gval, bval)]++;
-        }
-        return histo;
-    }
-
-    private VBox VBoxFromPixels(IEnumerable<PixelRGB> pixels)
-    {
-        byte rmin = 255, rmax = 0;
-        byte gmin = 255, gmax = 0;
-        byte bmin = 255, bmax = 0;
-
-        foreach (var pixel in pixels)
-        {
-            rmin = Math.Min(rmin, (byte)(pixel.R >> Rshift));
-            rmax = Math.Max(rmax, (byte)(pixel.R >> Rshift));
-            gmin = Math.Min(gmin, (byte)(pixel.G >> Rshift));
-            gmax = Math.Max(gmax, (byte)(pixel.G >> Rshift));
-            bmin = Math.Min(bmin, (byte)(pixel.B >> Rshift));
-            bmax = Math.Max(bmax, (byte)(pixel.B >> Rshift));
-        }
-
-        return VBox.FromHisto(new PixelRGB(rmin, gmin, bmin), new PixelRGB(rmax, gmax, bmax), _histo);
     }
 
     private void Iter(PQueue<VBox> pq, double target)
@@ -229,8 +214,8 @@ public class Mmcq
                 }
 
                 VBox vbox1, vbox2;
-                byte v1 = (byte)d2;
-                byte v2 = (byte)(d2 + 1);
+                byte v1 = (byte)Math.Min(d2, byte.MaxValue);
+                byte v2 = (byte)Math.Min(d2 + 1, byte.MaxValue);
                 switch(dim)
                 {
                     case 'r':
